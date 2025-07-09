@@ -18,26 +18,26 @@ Download and place `pneumoniamnist.npz` in the root directory or `/content/` if 
 
 ---
 
-## 📦 Dependencies
+##  Dependencies
 
 Install all dependencies using:
 
 ```bash
 pip install -r requirements.txt
 
-Clone the repository (or open in Colab)
+## Clone the repository (or open in Colab)
 git clone https://github.com/yourusername/pneumonia-inceptionv3.git
 cd pneumonia-inceptionv3
 
 
-Download the Dataset
+Download the Dataset via kaggle [PneumoniaMNIST](https://www.kaggle.com/datasets/rijulshr/pneumoniamnist/data?select=pneumoniamnist.npz) dataset 
 
 
-Train the Model
+## Train the Model
 python train.py
 
 
-# Folder structure 
+## Folder structure 
 .
 ├── pneumoniamnist.npz
 ├── inceptionv3_pneumonia.ipynb
