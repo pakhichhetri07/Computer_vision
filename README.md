@@ -7,14 +7,16 @@ Download and place `pneumoniamnist.npz` in the root directory or `/content/` if 
 
 ---
 
-## 🚀 Features
+##  Features
 
-- Transfer learning with **InceptionV3** from `torchvision.models`
-- **Data augmentation** (random flip, rotation, brightness/contrast)
-- **Class imbalance handling** via `WeightedRandomSampler`
-- Evaluation using **Accuracy**, **F1-Score**, and **AUROC**
-- Model checkpointing and **best model selection**
-- Modular code with `evaluate()` function
+- **Transfer learning** with InceptionV3 from torchvision.models
+- Image preprocessing and **augmentation** (resize, grayscale to 3-channel, random flip, rotation)
+- **Class imbalance** handling using WeightedRandomSampler
+- 5-Fold **Cross Validation** for robust evaluation
+- **Early stopping** based on validation AUROC
+- **Evaluation** using Accuracy, F1-Score, and AUROC
+- **Confusion matrix** plotted for each fold
+- **Modular training** with evaluate() function for validation and testing
 
 ---
 
@@ -26,8 +28,7 @@ Install all dependencies using:
 pip install -r requirements.txt
 
 ## Clone the repository (or open in Colab)
-git clone [https://github.com/pakhichhetri07/Computer_vision.git]
-cd pneumonia-inceptionv3
+git clone https://github.com/pakhichhetri07/Computer_vision.git
 
 
 Download the Dataset via kaggle [PneumoniaMNIST](https://www.kaggle.com/datasets/rijulshr/pneumoniamnist/data?select=pneumoniamnist.npz) dataset 
