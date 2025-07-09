@@ -4,7 +4,7 @@ from PIL import Image
 import torch.nn as nn
 import torch.optim as optim
 from torchvision import models, transforms
-from torch.utils.data import DataLoader, WeightedRandomSampler, Subset
+from torch.utils.data import DataLoader, WeightedRandomSampler, Subset, Dataset
 from torchvision.datasets import ImageFolder
 import os
 import numpy as np
@@ -12,7 +12,7 @@ from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 import matplotlib.pyplot as plt
 from sklearn.model_selection import KFold
 import copy
-
+import seaborn as sns
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -26,10 +26,19 @@ y_val = data['val_labels']
 X_test = data['test_images']
 y_test = data['test_labels']
 
+# Visualize Class Distribution
+train_labels_flat = np.concatenate([y_train, y_val]).flatten()
+unique, counts = np.unique(train_labels_flat, return_counts=True)
+plt.figure(figsize=(6, 4))
+sns.barplot(x=unique, y=counts)
+plt.xlabel('Class Label')
+plt.ylabel('Sample Count')
+plt.title('Class Distribution in Training + Validation Set')
+plt.xticks(ticks=[0,1], labels=['Normal','Pneumonia'])
+plt.tight_layout()
+plt.show()
 
-import torch
-from torch.utils.data import Dataset
-
+# Custom Dataset
 class PneumoniaDataset(Dataset):
     def __init__(self, images, labels, transform=None):
         self.images = images  # shape: (N, 28, 28)
@@ -51,7 +60,7 @@ class PneumoniaDataset(Dataset):
         return img, label
 
 
-# Preprocess: Resize to 299x299 and convert grayscale to 3 channels
+# Data Augmentation
 transform_train = transforms.Compose([
     transforms.Resize((299, 299)),
     transforms.Grayscale(num_output_channels=3),
@@ -85,36 +94,47 @@ def evaluate(model, dataloader):
     auc = roc_auc_score(all_labels, all_preds)
     return acc, f1, auc
 
-
- K-Fold Cross Validation
+# Prepare Datasets
 X_all = np.concatenate([X_train, X_val], axis=0)
 y_all = np.concatenate([y_train, y_val], axis=0)
 full_dataset = PneumoniaDataset(X_all, y_all, transform=transform_train)
-
 test_dataset = PneumoniaDataset(X_test, y_test, transform=transform_test)
 test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
+
+# K-Fold Cross Validation
 kfold = KFold(n_splits=5, shuffle=True, random_state=42)
 all_test_metrics = []
 
 for fold, (train_idx, val_idx) in enumerate(kfold.split(X_all)):
     print(f"\n--- Fold {fold+1}/5 ---")
 
-    # Split into train and val subsets
+    # Train/val split
     train_subset = Subset(full_dataset, train_idx)
     val_subset = Subset(PneumoniaDataset(X_all, y_all, transform=transform_test), val_idx)
 
-    # Class balancing for training fold
+    # Class balancing
     labels_fold = y_all[train_idx].flatten()
     class_sample_count = np.array([len(np.where(labels_fold == t)[0]) for t in np.unique(labels_fold)])
     weights = 1. / class_sample_count
     samples_weight = np.array([weights[int(t)] for t in labels_fold])
     sampler = WeightedRandomSampler(samples_weight, len(samples_weight))
 
+    # Visualize Oversampled Class Distribution (simulated)
+    sampled_labels = [int(labels_fold[i]) for i in list(sampler)]
+    plt.figure(figsize=(6, 4))
+    sns.histplot(sampled_labels, bins=2)
+    plt.xlabel('Class Label')
+    plt.ylabel('Sampled Count')
+    plt.title(f'Oversampled Class Distribution (Fold {fold+1})')
+    plt.xticks(ticks=[0, 1], labels=['Normal', 'Pneumonia'])
+    plt.tight_layout()
+    plt.show()
+
     train_loader = DataLoader(train_subset, batch_size=32, sampler=sampler)
     val_loader = DataLoader(val_subset, batch_size=32, shuffle=False)
 
-    # Model
+    # Model training
     model = models.inception_v3(pretrained=True, aux_logits=True)
     model.fc = nn.Linear(model.fc.in_features, 2)
     model.to(device)
@@ -122,7 +142,6 @@ for fold, (train_idx, val_idx) in enumerate(kfold.split(X_all)):
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
-    # Early Stopping Based on AUROC
     best_val_auc = 0
     trigger_times = 0
     patience = 5
@@ -151,13 +170,14 @@ for fold, (train_idx, val_idx) in enumerate(kfold.split(X_all)):
         else:
             trigger_times += 1
             if trigger_times >= patience:
-                print(f"Early stopping at epoch {epoch+1}")
+                print(f" Early stopping at epoch {epoch+1}")
                 break
 
+# test model
 model.load_state_dict(best_model_wts)
-    test_acc, test_f1, test_auc = evaluate(model, test_loader)
-    print(f"Fold {fold+1} Test: Accuracy={test_acc:.4f}, F1={test_f1:.4f}, AUROC={test_auc:.4f}")
-    all_test_metrics.append((test_acc, test_f1, test_auc))
+test_acc, test_f1, test_auc = evaluate(model, test_loader)
+print(f" Fold {fold+1} Test: Accuracy={test_acc:.4f}, F1={test_f1:.4f}, AUROC={test_auc:.4f}")
+all_test_metrics.append((test_acc, test_f1, test_auc))
 
 # Average Test Performance
 avg_acc = np.mean([m[0] for m in all_test_metrics])
@@ -166,4 +186,33 @@ avg_auc = np.mean([m[2] for m in all_test_metrics])
 
 print(f"\n Average Test Performance across 5 folds:")
 print(f"Accuracy: {avg_acc:.4f}, F1-Score: {avg_f1:.4f}, AUROC: {avg_auc:.4f}")
+
+# Evaluate on test set
+all_preds, all_labels = [], []
+model.eval()
+with torch.no_grad():
+    for x, y in test_loader:
+        x, y = x.to(device), y.to(device)
+        outputs = model(x)
+        if isinstance(outputs, tuple):
+            outputs = outputs[0]
+        preds = torch.argmax(outputs, dim=1)
+        all_preds.extend(preds.cpu().numpy())
+        all_labels.extend(y.cpu().numpy())
+
+test_acc = accuracy_score(all_labels, all_preds)
+test_f1 = f1_score(all_labels, all_preds)
+test_auc = roc_auc_score(all_labels, all_preds)
+print(f" Fold {fold+1} Test: Accuracy={test_acc:.4f}, F1={test_f1:.4f}, AUROC={test_auc:.4f}")
+all_test_metrics.append((test_acc, test_f1, test_auc))
+
+# Confusion Matrix
+cm = confusion_matrix(all_labels, all_preds)
+plt.figure(figsize=(5, 4))
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=['Normal', 'Pneumonia'], yticklabels=['Normal', 'Pneumonia'])
+plt.xlabel('Predicted Label')
+plt.ylabel('True Label')
+plt.title(f'Confusion Matrix - Fold {fold+1}')
+plt.tight_layout()
+plt.show()
 
