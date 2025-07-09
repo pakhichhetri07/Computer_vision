@@ -26,7 +26,7 @@ Install all dependencies using:
 pip install -r requirements.txt
 
 ## Clone the repository (or open in Colab)
-git clone https://github.com/yourusername/pneumonia-inceptionv3.git
+git clone [https://github.com/pakhichhetri07/Computer_vision.git]
 cd pneumonia-inceptionv3
 
 
