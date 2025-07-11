@@ -44,7 +44,26 @@ python train.py
 ├── inceptionv3_pneumonia.ipynb
 ├── requirements.txt
 ├── README.md
-└── train.py    
+└── train.py
+
+#  Training Accuracy
+
+| Fold | Epochs | Max Val Acc | Max F1 | Max AUROC |
+| ---- | ------ | ----------- | ------ | --------- |
+| 1    | 8      | 0.9683      | 0.9823 | 0.9151    |
+| 2    | 9      | 0.9671      | 0.9811 | 0.9451    |
+| 3    | 10     | 0.9637      | 0.9792 | 0.9515    |
+| 4    | 10     | 0.9739      | 0.9852 | 0.9699    |
+| 5    | 10     | 0.9762      | 0.9865 | 0.9675    |
+
+#  Final Test score
+Accuracy: 88.78%
+F1 Score: 0.9157
+AUROC: 0.8590
+
+
+
+
 
 
 
