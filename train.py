@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader, WeightedRandomSampler, Subset, Dataset
 from torchvision.datasets import ImageFolder
 import os
 import numpy as np
-from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+from sklearn.metrics import accuracy_score, f1_score, roc_auc_score, confusion_matrix
 import matplotlib.pyplot as plt
 from sklearn.model_selection import KFold
 import copy
@@ -19,6 +19,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #load dataset
 data = np.load('/content/pneumoniamnist.npz')
 print(data.files)
+
+#train_test_split
 X_train = data['train_images']
 y_train = data['train_labels']
 X_val = data['val_images']
@@ -29,6 +31,7 @@ y_test = data['test_labels']
 # Visualize Class Distribution
 train_labels_flat = np.concatenate([y_train, y_val]).flatten()
 unique, counts = np.unique(train_labels_flat, return_counts=True)
+
 plt.figure(figsize=(6, 4))
 sns.barplot(x=unique, y=counts)
 plt.xlabel('Class Label')
@@ -38,7 +41,6 @@ plt.xticks(ticks=[0,1], labels=['Normal','Pneumonia'])
 plt.tight_layout()
 plt.show()
 
-# Custom Dataset
 class PneumoniaDataset(Dataset):
     def __init__(self, images, labels, transform=None):
         self.images = images  # shape: (N, 28, 28)
@@ -59,8 +61,7 @@ class PneumoniaDataset(Dataset):
 
         return img, label
 
-
-# Data Augmentation
+# Data augmentation: Preprocess: Resize to 299x299 and convert grayscale to 3 channels
 transform_train = transforms.Compose([
     transforms.Resize((299, 299)),
     transforms.Grayscale(num_output_channels=3),
@@ -74,7 +75,6 @@ transform_test = transforms.Compose([
     transforms.Grayscale(num_output_channels=3),
     transforms.ToTensor()
 ])
-
 
 # Evaluation Function
 def evaluate(model, dataloader):
@@ -101,52 +101,51 @@ full_dataset = PneumoniaDataset(X_all, y_all, transform=transform_train)
 test_dataset = PneumoniaDataset(X_test, y_test, transform=transform_test)
 test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
-
 # K-Fold Cross Validation
 kfold = KFold(n_splits=5, shuffle=True, random_state=42)
 all_test_metrics = []
-
 for fold, (train_idx, val_idx) in enumerate(kfold.split(X_all)):
     print(f"\n--- Fold {fold+1}/5 ---")
 
-    # Train/val split
+    # Split into train and val subsets
     train_subset = Subset(full_dataset, train_idx)
     val_subset = Subset(PneumoniaDataset(X_all, y_all, transform=transform_test), val_idx)
 
-    # Class balancing
+    # Class balancing for training fold
     labels_fold = y_all[train_idx].flatten()
     class_sample_count = np.array([len(np.where(labels_fold == t)[0]) for t in np.unique(labels_fold)])
     weights = 1. / class_sample_count
     samples_weight = np.array([weights[int(t)] for t in labels_fold])
     sampler = WeightedRandomSampler(samples_weight, len(samples_weight))
 
-    # Visualize Oversampled Class Distribution (simulated)
-    sampled_labels = [int(labels_fold[i]) for i in list(sampler)]
-    plt.figure(figsize=(6, 4))
-    sns.histplot(sampled_labels, bins=2)
-    plt.xlabel('Class Label')
-    plt.ylabel('Sampled Count')
-    plt.title(f'Oversampled Class Distribution (Fold {fold+1})')
-    plt.xticks(ticks=[0, 1], labels=['Normal', 'Pneumonia'])
-    plt.tight_layout()
-    plt.show()
-
     train_loader = DataLoader(train_subset, batch_size=32, sampler=sampler)
     val_loader = DataLoader(val_subset, batch_size=32, shuffle=False)
 
-    # Model training
+    # Model
     model = models.inception_v3(pretrained=True, aux_logits=True)
+    # Freeze all parameters first
+    for param in model.parameters():
+      param.requires_grad = False
+
+    # Unfreeze higher-level layers: Mixed_7a, Mixed_7b, Mixed_7c, and fc
+    for name, param in model.named_parameters():
+      if any(layer in name for layer in ['Mixed_7a', 'Mixed_7b', 'Mixed_7c', 'fc']):
+        param.requires_grad = True
+
+    # Replace final classifier for 2 classes
     model.fc = nn.Linear(model.fc.in_features, 2)
-    model.to(device)
+
+    model = model.to(device)
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=1e-4)
 
+    # Early Stopping Based on AUROC
     best_val_auc = 0
     trigger_times = 0
     patience = 5
 
-    for epoch in range(20):
+    for epoch in range(10):
         model.train()
         total_loss = 0
         for x, y in train_loader:
@@ -170,13 +169,12 @@ for fold, (train_idx, val_idx) in enumerate(kfold.split(X_all)):
         else:
             trigger_times += 1
             if trigger_times >= patience:
-                print(f" Early stopping at epoch {epoch+1}")
+                print(f"Early stopping at epoch {epoch+1}")
                 break
 
-# test model
 model.load_state_dict(best_model_wts)
 test_acc, test_f1, test_auc = evaluate(model, test_loader)
-print(f" Fold {fold+1} Test: Accuracy={test_acc:.4f}, F1={test_f1:.4f}, AUROC={test_auc:.4f}")
+print(f"Fold {fold+1} Test: Accuracy={test_acc:.4f}, F1={test_f1:.4f}, AUROC={test_auc:.4f}")
 all_test_metrics.append((test_acc, test_f1, test_auc))
 
 # Average Test Performance
